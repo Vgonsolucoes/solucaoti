@@ -9,16 +9,47 @@ export interface SMTPConfig {
   fromName: string;
 }
 
-// Configuração padrão do SMTP (uaihost.com)
-export const defaultSMTPConfig: SMTPConfig = {
-  host: 'mail.uaihost.com',
-  port: 465,
-  secure: true, // true para 465 (SSL), false para outras portas
-  user: 'send@uaihost.com',
-  pass: 'Vsi@#$2018',
-  fromEmail: 'no-reply@sesolucao.com.br',
-  fromName: 'Aceite Solução Equipamentos'
+// Configuração padrão do SMTP
+// Prioridade: localStorage -> VITE_SMTP_* do build -> defaults placeholders (NÃO válidos para envio)
+const envFallback = {
+  host: import.meta.env.VITE_SMTP_HOST as string | undefined,
+  port: parseInt(import.meta.env.VITE_SMTP_PORT || '', 10) || undefined,
+  secure: import.meta.env.VITE_SMTP_SECURE === 'true',
+  user: import.meta.env.VITE_SMTP_USER as string | undefined,
+  pass: import.meta.env.VITE_SMTP_PASS as string | undefined,
+  fromEmail: import.meta.env.VITE_EMAIL_FROM as string | undefined,
+  fromName: undefined,
 };
+
+export const defaultSMTPConfig: SMTPConfig = {
+  host: envFallback.host || '',
+  port: envFallback.port || 587,
+  secure: envFallback.secure,
+  user: envFallback.user || '',
+  pass: envFallback.pass || '',
+  fromEmail: envFallback.fromEmail || '',
+  fromName: envFallback.fromName || 'Solução Equipamentos',
+};
+
+export function isSMTPConfigUsable(cfg: SMTPConfig | null | undefined): boolean {
+  if (!cfg) return false;
+  if (!cfg.host || !cfg.port) return false;
+  if (!cfg.user || !cfg.pass) return false;
+  const isPlaceholder = (s: string) => {
+    const v = (s || '').trim();
+    if (!v) return true;
+    if (v.length < 2) return true;
+    if (/seu-email|sua-senha|exemplo|coloque|your-email|your-password/i.test(v)) return true;
+    if (/^\$\{|^\{.*\}$/.test(v)) return true;
+    if (v === 'no-reply@sesolucao.com.br') return true;
+    return false;
+  };
+  if (isPlaceholder(cfg.user)) return false;
+  if (isPlaceholder(cfg.pass)) return false;
+  if (isPlaceholder(cfg.host)) return false;
+  if (cfg.fromEmail && isPlaceholder(cfg.fromEmail)) return false;
+  return true;
+}
 
 // Texto padrão de aceite com variáveis
 export const defaultAcceptanceText = `Prezado(a) {employee_name},

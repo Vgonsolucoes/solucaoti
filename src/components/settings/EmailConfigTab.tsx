@@ -6,18 +6,26 @@ export function EmailConfigTab() {
   const [acceptanceText, setAcceptanceText] = useState(getAcceptanceText());
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [testError, setTestError] = useState<string>('');
   const [testEmail, setTestEmail] = useState<string>(getSMTPConfig().user || getSMTPConfig().fromEmail || '');
   const [sendStatus, setSendStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle');
+  const [sendError, setSendError] = useState<string>('');
 
   useEffect(() => {
     const savedSMTP = getSMTPConfig();
     const savedText = getAcceptanceText();
     setSmtpConfig(savedSMTP);
     setAcceptanceText(savedText);
+    if (!testEmail.trim()) {
+      setTestEmail(savedSMTP.user || savedSMTP.fromEmail || '');
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleSave = () => {
     setSaveStatus('saving');
+    setTestError('');
+    setSendError('');
     try {
       saveSMTPConfig(smtpConfig);
       saveAcceptanceText(acceptanceText);
@@ -31,18 +39,24 @@ export function EmailConfigTab() {
 
   const handleTestEmail = async () => {
     setTestStatus('testing');
+    setTestError('');
     try {
       const res = await fetch('/api/test-smtp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ smtpConfig }),
       });
-      const data = await res.json();
-      setTestStatus(res.ok && data.ok ? 'success' : 'error');
-      setTimeout(() => setTestStatus('idle'), 3000);
-    } catch (error) {
+      const data = await res.json().catch(() => ({}));
+      const ok = res.ok && data.ok;
+      setTestStatus(ok ? 'success' : 'error');
+      if (!ok) {
+        setTestError(data?.error || data?.message || 'Erro na conexão SMTP. Verifique as configurações e tente novamente.');
+      }
+      setTimeout(() => setTestStatus('idle'), ok ? 3500 : 9000);
+    } catch (error: any) {
       setTestStatus('error');
-      setTimeout(() => setTestStatus('idle'), 3000);
+      setTestError(error?.message || 'Erro na conexão com o servidor. Verifique rede e tente novamente.');
+      setTimeout(() => setTestStatus('idle'), 9000);
     }
   };
 
@@ -50,22 +64,30 @@ export function EmailConfigTab() {
     const { defaultSMTPConfig, defaultAcceptanceText } = require('@/utils/emailConfig');
     setSmtpConfig(defaultSMTPConfig);
     setAcceptanceText(defaultAcceptanceText);
+    setTestError('');
+    setSendError('');
   };
 
   const handleSendTest = async () => {
     setSendStatus('sending');
+    setSendError('');
     try {
       const res = await fetch('/api/send-test-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ smtpConfig, to: testEmail }),
       });
-      const data = await res.json();
-      setSendStatus(res.ok && data.ok ? 'success' : 'error');
-      setTimeout(() => setSendStatus('idle'), 3000);
-    } catch {
+      const data = await res.json().catch(() => ({}));
+      const ok = res.ok && data.ok;
+      setSendStatus(ok ? 'success' : 'error');
+      if (!ok) {
+        setSendError(data?.error || data?.message || 'Falha ao enviar o e-mail de teste. Verifique as configurações.');
+      }
+      setTimeout(() => setSendStatus('idle'), ok ? 3500 : 9000);
+    } catch (error: any) {
       setSendStatus('error');
-      setTimeout(() => setSendStatus('idle'), 3000);
+      setSendError(error?.message || 'Erro ao tentar enviar e-mail. Verifique rede e tente novamente.');
+      setTimeout(() => setSendStatus('idle'), 9000);
     }
   };
 
@@ -101,7 +123,8 @@ export function EmailConfigTab() {
 
         {testStatus === 'error' && (
           <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
-            <p className="text-red-800">❌ Erro na conexão SMTP. Verifique as configurações.</p>
+            <p className="text-red-800">❌ Erro na conexão SMTP.</p>
+            {testError && <p className="mt-1 text-sm text-red-700 whitespace-pre-wrap">{testError}</p>}
           </div>
         )}
 
@@ -114,6 +137,7 @@ export function EmailConfigTab() {
         {sendStatus === 'error' && (
           <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
             <p className="text-red-800">❌ Falha ao enviar o e-mail de teste.</p>
+            {sendError && <p className="mt-1 text-sm text-red-700 whitespace-pre-wrap">{sendError}</p>}
           </div>
         )}
 

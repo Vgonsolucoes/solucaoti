@@ -287,13 +287,20 @@ export default function AssignmentForm({ open, setOpen, onSuccess }: AssignmentF
       let emailSent = false;
       try {
         console.log('📧 Enviando email de aceite via backend com dados:', emailData);
-        const { getSMTPConfig, getAcceptanceText } = await import('@/utils/emailConfig');
+        const { getSMTPConfig, getAcceptanceText, isSMTPConfigUsable } = await import('@/utils/emailConfig');
         const smtpConfig = getSMTPConfig();
+        const useUiSmtp = isSMTPConfigUsable(smtpConfig);
         const acceptanceText = getAcceptanceText();
         const res = await fetch('/api/send-acceptance-email', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ smtpConfig, emailData, assignmentId: assignment.id, baseUrl: window.location.origin, acceptanceText }),
+          body: JSON.stringify({
+            ...(useUiSmtp ? { smtpConfig } : {}),
+            emailData,
+            assignmentId: assignment.id,
+            baseUrl: window.location.origin,
+            acceptanceText
+          }),
         });
         const data = await res.json().catch(() => ({}));
         emailSent = res.ok && data.ok;

@@ -15,6 +15,104 @@ const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
 const APP_URL = process.env.APP_URL || '';
 const DATABASE_URL = process.env.DATABASE_URL;
 
+function getServerSMTPConfig() {
+  const host = process.env.SMTP_HOST || process.env.VITE_SMTP_HOST;
+  const port = parseInt(process.env.SMTP_PORT || process.env.VITE_SMTP_PORT || '', 10);
+  const secure = (process.env.SMTP_SECURE || process.env.VITE_SMTP_SECURE || 'false') === 'true';
+  const user = process.env.SMTP_USER || process.env.VITE_SMTP_USER;
+  const pass = process.env.SMTP_PASS || process.env.VITE_SMTP_PASS;
+  const fromEmail = process.env.SMTP_FROM || process.env.EMAIL_FROM || process.env.VITE_EMAIL_FROM;
+  const fromName = process.env.SMTP_FROM_NAME || 'Solução Equipamentos';
+  return { host, port, secure, user, pass, fromEmail, fromName };
+}
+
+function isPlaceholder(v) {
+  const s = String(v || '').trim();
+  if (!s) return true;
+  if (s.length < 2) return true;
+  if (/seu-email|sua-senha|exemplo|coloque|your-email|your-password/i.test(s)) return true;
+  if (/^\$\{|^\{.*\}$/.test(s)) return true;
+  if (s === 'no-reply@sesolucao.com.br') return true;
+  return false;
+}
+
+function looksLikeEmail(v) {
+  return typeof v === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
+}
+
+function parseBoolLike(v) {
+  if (typeof v === 'boolean') return v;
+  if (typeof v === 'number') return !!v;
+  if (typeof v === 'string') {
+    const s = v.trim().toLowerCase();
+    if (s === 'true' || s === '1' || s === 'on' || s === 'sim' || s === 'yes') return true;
+    if (s === 'false' || s === '0' || s === 'off' || s === 'não' || s === 'nao' || s === 'no') return false;
+  }
+  return undefined;
+}
+
+function resolveSMTPConfig(provided, forceProvided = false) {
+  const server = getServerSMTPConfig();
+  const raw = provided || {};
+  const hasProvided = forceProvided || !!provided;
+  const cleanString = (v, def, fallback) => {
+    if (typeof v === 'string') {
+      const t = v.trim();
+      if (t) return t;
+    }
+    if (Number.isFinite(v) && Number(v) > 0) return String(v);
+    if (hasProvided) return def;
+    return fallback;
+  };
+  const hostProvided = cleanString(raw.host, undefined, server.host);
+  const portProvided = Number.isFinite(Number(raw.port)) && Number(raw.port) > 0 ? Number(raw.port) : (hasProvided ? undefined : (server.port && Number(server.port) > 0 ? Number(server.port) : 587));
+  const secureRawProvided = parseBoolLike(raw.secure);
+  const secureProvided = typeof secureRawProvided === 'boolean' ? secureRawProvided : (hasProvided ? false : !!server.secure);
+  const userProvided = cleanString(raw.user, undefined, server.user);
+  const passProvided = cleanString(raw.pass, undefined, server.pass);
+  const fromEmailProvided = cleanString(raw.fromEmail, undefined, server.fromEmail);
+  const fromNameProvided = cleanString(raw.fromName, server.fromName, server.fromName);
+
+  const cfg = {
+    host: (hostProvided && !isPlaceholder(hostProvided)) ? hostProvided : (hasProvided ? undefined : server.host),
+    port: portProvided || (hasProvided ? 0 : 587),
+    secure: secureProvided,
+    user: (userProvided && !isPlaceholder(userProvided)) ? userProvided : (hasProvided ? undefined : server.user),
+    pass: (passProvided && !isPlaceholder(passProvided)) ? passProvided : (hasProvided ? undefined : server.pass),
+    fromEmail: (fromEmailProvided && !isPlaceholder(fromEmailProvided)) ? fromEmailProvided : (hasProvided ? undefined : server.fromEmail),
+    fromName: fromNameProvided,
+  };
+  if (!cfg.fromEmail) cfg.fromEmail = cfg.user;
+  return cfg;
+}
+
+function resolveSMTPConfigWithSmartFallback(provided) {
+  const first = resolveSMTPConfig(provided, !!(provided && typeof provided === 'object'));
+  if (validateSMTPConfig(first)) return { cfg: first, source: typeof provided === 'object' && provided ? 'provided-ui' : 'server-default-fallback' };
+  const second = resolveSMTPConfig(undefined, false);
+  if (validateSMTPConfig(second)) return { cfg: second, source: 'server-fallback-because-ui-was-invalid' };
+  return { cfg: first, source: 'neither-valid' };
+}
+
+function validateSMTPConfig(cfg) {
+  if (!cfg || !cfg.host || !cfg.port || !cfg.user || !cfg.pass) return false;
+  if (!Number.isFinite(cfg.port) || cfg.port <= 0) return false;
+  if (isPlaceholder(cfg.host) || isPlaceholder(cfg.user) || isPlaceholder(cfg.pass)) return false;
+  if (cfg.fromEmail && (isPlaceholder(cfg.fromEmail) || !looksLikeEmail(cfg.fromEmail))) return false;
+  return true;
+}
+
+function describeSmtpError(err) {
+  if (!err) return 'Erro desconhecido do provedor SMTP';
+  const parts = [];
+  if (err.code) parts.push('Código: ' + err.code);
+  if (err.response) parts.push(String(err.response).trim());
+  else if (err.message) parts.push(err.message.trim());
+  if (err.command) parts.push('Comando: ' + err.command);
+  const joined = parts.filter(Boolean).join(' | ');
+  return joined || 'Erro desconhecido do provedor SMTP';
+}
+
 app.use(express.json({ limit: '1mb' }));
 
 // Configurar multer para upload de arquivos
@@ -87,29 +185,50 @@ function getPg() {
 app.post('/api/test-smtp', async (req, res) => {
   try {
     const { smtpConfig } = req.body || {};
-    if (!smtpConfig || !smtpConfig.host || !smtpConfig.port) {
-      return res.status(400).json({ ok: false, error: 'Configuração SMTP incompleta' });
+    const forceProvided = !!(smtpConfig && typeof smtpConfig === 'object');
+    const resolved = resolveSMTPConfig(smtpConfig, forceProvided);
+    if (!validateSMTPConfig(resolved)) {
+      return res.status(422).json({
+        ok: false,
+        error:
+          'Configuração SMTP ausente ou inválida (verifique host, porta, usuário, senha e formato válido de "Email de Envio (From)").',
+      });
     }
-    const transporter = createTransporter(smtpConfig);
+    const transporter = createTransporter(resolved);
     await transporter.verify();
     return res.json({ ok: true });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: err instanceof Error ? err.message : 'Erro desconhecido' });
+    console.error('[SMTP] /api/test-smtp failed:', describeSmtpError(err));
+    return res.status(422).json({
+      ok: false,
+      error:
+        'Erro do provedor SMTP: ' +
+        describeSmtpError(err) +
+        ' — Verifique se usuário/senha estão corretos, porta/segurança batem com o provedor (ex.: 465 seguro) e se não há 2FA pedindo senha de aplicativo.',
+      raw_error: describeSmtpError(err),
+    });
   }
 });
 
 app.post('/api/send-test-email', async (req, res) => {
   try {
     const { smtpConfig, to } = req.body || {};
-    if (!smtpConfig || !to) {
-      return res.status(400).json({ ok: false, error: 'Parâmetros inválidos' });
+    const toClean = typeof to === 'string' ? to.trim() : '';
+    const forceProvided = !!(smtpConfig && typeof smtpConfig === 'object');
+    const resolved = resolveSMTPConfig(smtpConfig, forceProvided);
+    if (!toClean || !looksLikeEmail(toClean) || !validateSMTPConfig(resolved)) {
+      return res.status(422).json({
+        ok: false,
+        error:
+          'Parâmetros inválidos ou SMTP incompleto. Verifique o endereço de destino (formato de e-mail) e que host/porta/usuário/senha estão preenchidos com valores reais.',
+      });
     }
-    const transporter = createTransporter(smtpConfig);
-    const fromName = smtpConfig.fromName || 'Solução Equipamentos';
-    const fromEmail = smtpConfig.fromEmail || smtpConfig.user;
+    const transporter = createTransporter(resolved);
+    const fromName = resolved.fromName || 'Solução Equipamentos';
+    const fromEmail = resolved.fromEmail || resolved.user;
     const info = await transporter.sendMail({
       from: `"${fromName}" <${fromEmail}>`,
-      to,
+      to: toClean,
       subject: 'Teste SMTP - Solução Equipamentos',
       text:
         'Este é um e-mail de teste enviado pelo servidor.\n\n' +
@@ -123,20 +242,42 @@ app.post('/api/send-test-email', async (req, res) => {
     });
     return res.json({ ok: true, messageId: info.messageId });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: err instanceof Error ? err.message : 'Erro desconhecido' });
+    console.error('[SMTP] /api/send-test-email failed:', describeSmtpError(err));
+    return res.status(422).json({
+      ok: false,
+      error: 'Erro ao enviar e-mail de teste: ' + describeSmtpError(err),
+      raw_error: describeSmtpError(err),
+    });
   }
 });
 
 app.post('/api/send-acceptance-email', async (req, res) => {
   try {
     const { smtpConfig, emailData, assignmentId, baseUrl, acceptanceText } = req.body || {};
-    if (!smtpConfig || !emailData || !assignmentId) {
+    const smtpResolution = resolveSMTPConfigWithSmartFallback(smtpConfig);
+    const resolved = smtpResolution.cfg;
+    console.log('[SMTP] /api/send-acceptance-email source:', smtpResolution.source);
+    if (!emailData || !assignmentId) {
       return res.status(400).json({ ok: false, error: 'Parâmetros inválidos' });
     }
+    if (!looksLikeEmail(emailData.employeeEmail || '')) {
+      return res.status(422).json({
+        ok: false,
+        error: 'E-mail do colaborador está com formato inválido: ' + JSON.stringify(emailData?.employeeEmail || ''),
+      });
+    }
+    if (!validateSMTPConfig(resolved)) {
+      return res.status(422).json({
+        ok: false,
+        error:
+          'Configuração SMTP ausente/inválida. ' +
+          'Preencha os dados reais em Configurações > E-mail/SMTP ou declare as variáveis SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS no servidor.',
+      });
+    }
     const pool = getPg();
-    const transporter = createTransporter(smtpConfig);
-    const fromName = smtpConfig.fromName || 'Solução Equipamentos';
-    const fromEmail = smtpConfig.fromEmail || smtpConfig.user;
+    const transporter = createTransporter(resolved);
+    const fromName = resolved.fromName || 'Solução Equipamentos';
+    const fromEmail = resolved.fromEmail || resolved.user;
     
     // Cria ou tenta criar token de aprovação
     async function createApprovalToken(assignmentId, userEmail) {
@@ -240,8 +381,15 @@ Este link pode expirar em até 24 horas.`;
     });
     return res.json({ ok: true, messageId: info.messageId });
   } catch (err) {
-    console.error('send-acceptance-email failed:', err);
-    return res.status(500).json({ ok: false, error: err instanceof Error ? err.message : 'Erro desconhecido' });
+    console.error('[SMTP] send-acceptance-email failed:', describeSmtpError(err));
+    return res.status(422).json({
+      ok: false,
+      error:
+        'Erro ao enviar e-mail de aceite: ' +
+        describeSmtpError(err) +
+        ' — Verifique Configurações > E-mail/SMTP (usuário, senha, porta e segurança) ou confira com o provedor do e-mail (UaiHost) se usuário/senha e porta estão corretos e sem bloqueios.',
+      raw_error: describeSmtpError(err),
+    });
   }
 });
 
@@ -475,12 +623,19 @@ app.post('/api/process-approval', async (req, res) => {
 app.post('/api/send-return-email', async (req, res) => {
   try {
     const { smtpConfig, emailData } = req.body || {};
-    if (!smtpConfig || !emailData) {
-      return res.status(400).json({ ok: false, error: 'Parâmetros inválidos' });
+    const smtpResolution = resolveSMTPConfigWithSmartFallback(smtpConfig);
+    const resolved = smtpResolution.cfg;
+    console.log('[SMTP] /api/send-return-email source:', smtpResolution.source);
+    if (!emailData || !looksLikeEmail(emailData.employeeEmail || '') || !validateSMTPConfig(resolved)) {
+      return res.status(422).json({
+        ok: false,
+        error:
+          'Parâmetros inválidos ou SMTP incompleto. Verifique e-mail do colaborador (formato válido) e as configurações SMTP reais em host/porta/usuário/senha/segurança.',
+      });
     }
-    const transporter = createTransporter(smtpConfig);
-    const fromName = smtpConfig.fromName || 'Solução Equipamentos';
-    const fromEmail = smtpConfig.fromEmail || smtpConfig.user;
+    const transporter = createTransporter(resolved);
+    const fromName = resolved.fromName || 'Solução Equipamentos';
+    const fromEmail = resolved.fromEmail || resolved.user;
     
     const deviceListText = (emailData.deviceList || []).map((d) => `- ${d}`).join('\n');
     const text =
@@ -531,8 +686,12 @@ Equipe Solução Equipamentos`;
     });
     return res.json({ ok: true, messageId: info.messageId });
   } catch (err) {
-    console.error('send-return-email failed:', err);
-    return res.status(500).json({ ok: false, error: err instanceof Error ? err.message : 'Erro desconhecido' });
+    console.error('[SMTP] send-return-email failed:', describeSmtpError(err));
+    return res.status(422).json({
+      ok: false,
+      error: 'Erro ao enviar e-mail de devolução: ' + describeSmtpError(err),
+      raw_error: describeSmtpError(err),
+    });
   }
 });
 

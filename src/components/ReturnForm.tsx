@@ -197,12 +197,16 @@ export default function ReturnForm({ open, setOpen, onSuccess }: ReturnFormProps
           condition,
           notes
         };
-        const { getSMTPConfig } = await import('@/utils/emailConfig');
+        const { getSMTPConfig, isSMTPConfigUsable } = await import('@/utils/emailConfig');
         const smtpConfig = getSMTPConfig();
+        const useUiSmtp = isSMTPConfigUsable(smtpConfig);
         const resp = await fetch('/api/send-return-email', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ smtpConfig, emailData }),
+          body: JSON.stringify({
+            ...(useUiSmtp ? { smtpConfig } : {}),
+            emailData
+          }),
         });
         const data = await resp.json().catch(() => ({}));
         if (!resp.ok || !data.ok) {

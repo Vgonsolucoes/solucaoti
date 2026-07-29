@@ -76,6 +76,10 @@ export default function Assignments() {
     }
 
     try {
+      const { getSMTPConfig, isSMTPConfigUsable, getAcceptanceText } = await import('@/utils/emailConfig');
+      const smtpConfig = getSMTPConfig();
+      const useUiSmtp = isSMTPConfigUsable(smtpConfig);
+
       // Buscar dados dos equipamentos
       const { data: devicesData, error: devicesError } = await supabase
         .from('devices')
@@ -104,19 +108,24 @@ export default function Assignments() {
         acceptanceLink: `${window.location.origin}/accept-assignment/${assignment.id}`
       };
 
-      const { getSMTPConfig } = await import('@/utils/emailConfig');
-      const smtpConfig = getSMTPConfig();
+      const acceptanceText = getAcceptanceText();
       const resp = await fetch('/api/send-acceptance-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ smtpConfig, emailData, assignmentId: assignment.id, baseUrl: window.location.origin }),
+        body: JSON.stringify({
+          ...(useUiSmtp ? { smtpConfig } : {}),
+          emailData,
+          assignmentId: assignment.id,
+          baseUrl: window.location.origin,
+          acceptanceText
+        }),
       });
-      const respData = await resp.json();
+      const respData = await resp.json().catch(() => ({}));
       const sent = resp.ok && respData.ok;
       if (sent) {
         alert('Email de aprovação reenviado com sucesso!');
       } else {
-        const msg = respData?.error || 'Erro ao reenviar email de aprovação. Verifique as configurações SMTP em Configurações.';
+        const msg = respData?.error || 'Erro ao reenviar email de aprovação. Verifique as configurações SMTP em Configurações > E-mail/SMTP.';
         alert(msg);
       }
     } catch (error) {
