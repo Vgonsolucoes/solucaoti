@@ -1,0 +1,11 @@
+numero_patrimonio,categoria,estado,numero_serie,part_number,marca,modelo,numero_nf,descricao,observacoes
+PAT-001,Informática,Novo,SN123456789,PN-LAPTOP-001,Dell,Latitude 5520,NF-2024-001,Laptop Dell Latitude 5520 i7 16GB 512GB SSD,Equipamento novo para departamento de TI
+PAT-002,Informática,Usado,SN987654321,PN-MONITOR-002,Samsung,Monitor 24" Full HD,NF-2024-002,Monitor Samsung 24" Full HD HDMI/DisplayPort,Com pequenos arranhões na tela
+PAT-003,Informática,Novo,SN456789123,PN-TECLADO-003,Logitech,Teclado Wireless K380,NF-2024-003,Teclado Logitech sem fio compacto,Inclui pilhas e receptor USB
+PAT-004,Informática,Usado,SN789123456,PN-MOUSE-004,Microsoft,Mouse Wireless 1850,NF-2024-004,Mouse Microsoft sem fio ambidestro,Com desgaste normal de uso
+PAT-005,Informática,Novo,SN321654987,PN-NOTEBOOK-005,Lenovo,ThinkPad X1 Carbon,NF-2024-005,Notebook Lenovo ThinkPad X1 Carbon i7 16GB 1TB SSD,Equipamento premium para diretoria
+PAT-006,Informática,Usado,SN654987321,PN-DESKTOP-006,HP,Desktop ProDesk 600,NF-2024-006,Desktop HP ProDesk i5 8GB 256GB SSD,Recondicionado e pronto para uso
+PAT-007,Informática,Novo,SN987321654,PN-IMPRESSORA-007,Epson,Impressora EcoTank L3150,NF-2024-007,Impressora multifuncional Epson com tanque de tinta,Inclui tintas originais
+PAT-008,Informática,Usado,SN147258369,PN-SCANNER-008,Fujitsu,Scanner ScanSnap iX500,NF-2024-008,Scanner Fujitsu duplex de alta velocidade,Com manual e cabos originais
+PAT-009,Informática,Novo,SN369258147,PN-WEBCAM-009,Logitech,Webcam C920 HD Pro,NF-2024-009,Webcam Logitech Full HD 1080p com microfone,Para videoconferências
+PAT-010,Informática,Usado,SN258369147,PN-HEADSET-010,Jabra,Headset Evolve2 40,NF-2024-010,Headset Jabra com microfone noise-canceling,Com pequeno desgaste no acolchoamento
